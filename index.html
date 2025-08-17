@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Canvas Studio — Web Drawing & Image Editor</title>
+  <style>
+    :root{
+      --bg:#0f1220; /* deep indigo */
+      --panel:#171a2b;
+      --muted:#232744;
+      --text:#e8ecff;
+      --accent:#8ab4ff;
+      --accent-2:#a3ffd6;
+      --danger:#ff6b6b;
+      --shadow: 0 10px 30px rgba(0,0,0,.35);
+    }
+    *{ box-sizing: border-box; }
+    html, body { height: 100%; }
+    body{
+      margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      background: radial-gradient(1200px 700px at 20% -10%, #1b1f36 0%, var(--bg) 40%, #0a0d18 100%);
+      color: var(--text);
+      overflow: hidden;
+    }
+    .app{
+      display:grid; grid-template-columns: 280px 1fr; grid-template-rows: 64px 1fr; height:100vh; gap:10px; padding:10px;
+    }
+    header{
+      grid-column: 1 / -1; display:flex; align-items:center; gap:12px; padding:10px 12px; background:var(--panel); border-radius:16px; box-shadow: var(--shadow);
+    }
+    header .brand{ font-weight:800; letter-spacing:.5px; }
+    header .brand small{ opacity:.7; font-weight:500; }
+    header .toolbar{ display:flex; align-items:center; gap:8px; margin-left:auto; flex-wrap:wrap; }
+    .btn{ border:1px solid var(--muted); background:#121529; color:var(--text); padding:8px 10px; border-radius:12px; cursor:pointer; box-shadow: var(--shadow); font-weight:600; }
+    .btn:hover{ border-color:#2d335d; background:#161a33; }
+    .btn.primary{ background:linear-gradient(180deg, #2230ff22, #2230ff08); border-color:#2b3b84; }
+    .btn.danger{ border-color:#5b2a2a; background:linear-gradient(180deg, #ff303022, #ff303008); color:#ffdede; }
+    .seg{ display:inline-flex; border:1px solid var(--muted); border-radius:12px; overflow:hidden; }
+    .seg button{ border:0; background:#121529; padding:8px 10px; color:var(--text); cursor:pointer; }
+    .seg button.active{ background:#1a1f3a; color:var(--accent-2); }
+    select, input[type="number"], input[type="text"]{
+      background:#121529; color:var(--text); border:1px solid var(--muted); border-radius:12px; padding:8px 10px; box-shadow: var(--shadow);
+    }
+    input[type="color"]{ border:0; background:transparent; width:40px; height:36px; padding:0; cursor:pointer; }
+
+    /* Sidebar */
+    .sidebar{
+      background:var(--panel); border-radius:16px; box-shadow: var(--shadow); padding:12px; overflow:auto;
+    }
+    .sidebar h3{ margin:4px 0 10px; font-size:16px; opacity:.9; }
+    .layer-list{ display:flex; flex-direction:column; gap:8px; }
+    .layer{ display:flex; align-items:center; gap:8px; background:#11152a; border:1px solid var(--muted); border-radius:12px; padding:8px; }
+    .layer input[type="text"]{ flex:1; border-radius:8px; padding:6px 8px; }
+    .layer .meta{ display:flex; gap:6px; }
+    .layer .eye{ cursor:pointer; opacity:.8; }
+    .layer .eye.off{ opacity:.35; }
+
+    .canvas-wrap{
+      position:relative; background: repeating-conic-gradient(#262a44 0% 25%, #20243d 0% 50%) 50% / 20px 20px; border-radius:16px; box-shadow: var(--shadow); display:flex; align-items:center; justify-content:center; overflow:auto;
+    }
+    .stage{ position:relative; width:1024px; height:640px; background:transparent; box-shadow: inset 0 0 0 1px #2c3159, 0 0 0 6px #0c1022; border-radius:8px; }
+    .stage canvas{ position:absolute; left:0; top:0; width:100%; height:100%; image-rendering: crisp-edges; }
+
+    .floating-text{ position:absolute; min-width:120px; padding:4px 6px; border:1px dashed #5e6aff; background:#0b0f21; color:var(--text); border-radius:6px; outline:none; }
+
+    .footer-bar{
+      position:fixed; bottom:10px; left:50%; transform:translateX(-50%); background:#0e1226; border:1px solid #2a2f57; border-radius:12px; padding:8px 12px; box-shadow: var(--shadow); display:flex; gap:12px; align-items:center;
+      font-size:12px; opacity:.85;
+    }
+    .kbd{ padding:2px 6px; border:1px solid #2c3159; border-radius:6px; background:#0b0f21; }
+
+    .tool-row{ display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+    .spacer{ flex:1; }
+
+    .divider{ height:28px; width:1px; background:#2a2e4e; margin:0 4px; }
+
+    .hint{ font-size:12px; opacity:.7; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <div class="brand">🎨 Canvas Studio <small>— Advanced HTML5 Canvas Editor</small></div>
+      <div class="toolbar">
+        <div class="seg" id="toolSeg">
+          <button data-tool="brush" class="active" title="Brush (B)">Brush</button>
+          <button data-tool="eraser" title="Eraser (E)">Eraser</button>
+          <button data-tool="line" title="Line (L)">Line</button>
+          <button data-tool="rect" title="Rectangle (R)">Rect</button>
+          <button data-tool="ellipse" title="Ellipse (O)">Ellipse</button>
+          <button data-tool="text" title="Text (T)">Text</button>
+        </div>
+        <div class="divider"></div>
+        <label class="hint">Stroke</label>
+        <input type="number" id="strokeSize" min="1" max="100" value="6" />
+        <label class="hint">Color</label>
+        <input type="color" id="color" value="#ffffff" />
+        <label class="hint">Fill</label>
+        <input type="checkbox" id="fillToggle" />
+        <div class="divider"></div>
+        <select id="filterSelect" title="Apply filter to selected layer">
+          <option value="">Filters…</option>
+          <option value="grayscale">Grayscale</option>
+          <option value="sepia">Sepia</option>
+          <option value="invert">Invert</option>
+          <option value="blur2">Blur (2px)</option>
+          <option value="blur4">Blur (4px)</option>
+          <option value="blur8">Blur (8px)</option>
+          <option value="sharpen">Sharpen (lite)</option>
+          <option value="clearfilters">Clear Filters (revert)</option>
+        </select>
+        <div class="divider"></div>
+        <button class="btn" id="importImg">Import Image</button>
+        <button class="btn" id="exportPNG">Export PNG</button>
+        <button class="btn" id="saveProj">Save Project</button>
+        <button class="btn" id="loadProj">Load Project</button>
+        <button class="btn" id="clearAll">Clear All</button>
+        <button class="btn" id="undoBtn" title="Undo (Ctrl/⌘+Z)">Undo</button>
+        <button class="btn" id="redoBtn" title="Redo (Ctrl/⌘+Y)">Redo</button>
+      </div>
+    </header>
+
+    <aside class="sidebar">
+      <h3>Layers</h3>
+      <div class="tool-row" style="margin-bottom:8px;">
+        <button class="btn primary" id="addLayer">+ Add Layer</button>
+        <button class="btn" id="dupLayer">Duplicate</button>
+        <button class="btn danger" id="delLayer">Delete</button>
+      </div>
+      <div class="layer-list" id="layerList"></div>
+      <div class="tool-row" style="margin-top:8px;">
+        <button class="btn" id="layerUp">Move Up</button>
+        <button class="btn" id="layerDown">Move Down</button>
+      </div>
+      <p class="hint" style="margin-top:10px;">Tip: Double‑click a layer name to rename. Click the 👁 to toggle visibility.</p>
+    </aside>
+
+    <main class="canvas-wrap">
+      <div class="stage" id="stage" aria-label="Canvas Stage (layers)"></div>
+    </main>
+  </div>
+
+  <div class="footer-bar">
+    <span>Tools: <span class="kbd">B</span> Brush <span class="kbd">E</span> Eraser <span class="kbd">L</span> Line <span class="kbd">R</span> Rect <span class="kbd">O</span> Ellipse <span class="kbd">T</span> Text</span>
+    <span>|</span>
+    <span>Undo <span class="kbd">Ctrl/⌘+Z</span> · Redo <span class="kbd">Ctrl/⌘+Y</span></span>
+    <span>|</span>
+    <span>Hold <span class="kbd">Shift</span> for straight line</span>
+  </div>
+
+  <input type="file" id="hiddenFile" accept="image/*,.json" hidden />
+
+  <script>
+    // ========================
+    // Canvas Studio — Vanilla JS
+    // ========================
+
+    const stage = document.getElementById('stage');
+    const layerListEl = document.getElementById('layerList');
+    const hiddenFile = document.getElementById('hiddenFile');
+
+    const state = {
+      width: 1280, // internal pixel size (not CSS scaled)
+      height: 800,
+      tool: 'brush',
+      color: '#ffffff',
+      stroke: 6,
+      fill: false,
+      layers: [], // {canvas, ctx, name, visible, history:[], redo:[]}
+      activeIndex: -1,
+      overlay: null, // preview drawing canvas
+    };
+
+    // Initialize stage size and overlay
+    function initStage(){
+      // Match stage aspect to internal size using CSS size set in CSS .stage; we keep internal resolution
+      const overlay = document.createElement('canvas');
+      overlay.width = state.width; overlay.height = state.height; overlay.className = 'overlay';
+      stage.appendChild(overlay);
+      overlay.style.pointerEvents = 'none';
+      state.overlay = overlay; state.octx = overlay.getContext('2d');
+
+      addLayer('Background');
+      selectLayer(0);
+      pushHistory(); // initial snapshot
+    }
+
+    // Utilities
+    function makeCanvas(){
+      const c = document.createElement('canvas');
+      c.width = state.width; c.height = state.height; return c;
+    }
+    function redrawOverlay(fn){ const ctx = state.octx; ctx.clearRect(0,0,state.width,state.height); if(fn) fn(ctx); }
+
+    function addLayer(name='Layer ' + (state.layers.length+1)){
+      const canvas = makeCanvas();
+      const ctx = canvas.getContext('2d');
+      canvas.dataset.layerId = Date.now() + Math.random();
+      canvas.style.zIndex = String(10 + state.layers.length);
+      stage.insertBefore(canvas, state.overlay); // keep overlay on top
+      const layer = {canvas, ctx, name, visible:true, history:[], redo:[]};
+      state.layers.push(layer);
+      renderLayerList();
+      selectLayer(state.layers.length-1);
+      return layer;
+    }
+
+    function duplicateLayer(){
+      if(state.activeIndex<0) return;
+      const src = state.layers[state.activeIndex];
+      const layer = addLayer(src.name + ' copy');
+      layer.ctx.drawImage(src.canvas,0,0);
+      pushHistory();
+    }
+
+    function deleteLayer(){
+      if(state.layers.length<=1) { alert('At least one layer is required.'); return; }
+      if(state.activeIndex<0) return;
+      const [layer] = state.layers.splice(state.activeIndex,1);
+      layer.canvas.remove();
+      state.activeIndex = Math.max(0, state.activeIndex-1);
+      renderLayerList();
+      selectLayer(state.activeIndex);
+    }
+
+    function moveLayer(offset){
+      const idx = state.activeIndex; if(idx<0) return;
+      const newIdx = idx + offset; if(newIdx<0 || newIdx>=state.layers.length) return;
+      const [layer] = state.layers.splice(idx,1);
+      state.layers.splice(newIdx,0,layer);
+      // Reorder DOM
+      stage.removeChild(layer.canvas);
+      stage.insertBefore(layer.canvas, state.overlay);
+      // Re-append canvases in new order (bottom to top before overlay)
+      state.layers.forEach(l => { stage.insertBefore(l.canvas, state.overlay); });
+      state.activeIndex = newIdx; renderLayerList(); selectLayer(newIdx);
+    }
+
+    function selectLayer(i){
+      state.activeIndex = i; renderLayerList();
+    }
+
+    function renderLayerList(){
+      layerListEl.innerHTML = '';
+      [...state.layers].map((layer, idx) => ({layer, idx})).reverse().forEach(({layer, idx}) => {
+        const el = document.createElement('div'); el.className = 'layer';
+        const eye = document.createElement('span'); eye.textContent = '👁'; eye.className = 'eye' + (layer.visible?'':' off');
+        eye.onclick = () => { layer.visible = !layer.visible; layer.canvas.style.display = layer.visible?'block':'none'; eye.classList.toggle('off', !layer.visible); };
+        const name = document.createElement('input'); name.type='text'; name.value=layer.name; name.onchange = ()=>{ layer.name = name.value || layer.name; };
+        name.ondblclick = ()=> name.select();
+        const meta = document.createElement('div'); meta.className='meta';
+        const sel = document.createElement('input'); sel.type='radio'; sel.name='layerSel'; sel.title='Select Layer'; sel.checked = idx===state.activeIndex;
+        sel.onchange = ()=> selectLayer(idx);
+        el.appendChild(sel); el.appendChild(eye); el.appendChild(name); el.appendChild(meta);
+        el.style.outline = (idx===state.activeIndex)?'2px solid #4551ff80':'1px solid var(--muted)';
+        layerListEl.appendChild(el);
+      });
+    }
+
+    // =============
+    // Tool handling
+    // =============
+    const toolSeg = document.getElementById('toolSeg');
+    toolSeg.addEventListener('click', (e)=>{
+      if(e.target.tagName!=='BUTTON') return; setTool(e.target.dataset.tool);
+    });
+    function setTool(t){
+      state.tool = t; [...toolSeg.children].forEach(b=>b.classList.toggle('active', b.dataset.tool===t));
+      if(t!=='text') removeFloatingText();
+    }
+
+    // Controls
+    document.getElementById('strokeSize').addEventListener('change', e=> state.stroke = Math.max(1, +e.target.value||1));
+    document.getElementById('color').addEventListener('change', e=> state.color = e.target.value);
+    document.getElementById('fillToggle').addEventListener('change', e=> state.fill = e.target.checked);
+
+    // Mouse events on stage
+    let isDown=false, startX=0, startY=0, lastX=0, lastY=0;
+
+    stage.addEventListener('pointerdown', (e)=>{
+      const pos = getPointerPos(e);
+      isDown=true; startX=lastX=pos.x; startY=lastY=pos.y;
+      if(state.tool==='brush' || state.tool==='eraser') beginStroke(pos);
+      if(state.tool==='text') startTextInput(pos);
+    });
+    stage.addEventListener('pointermove', (e)=>{
+      if(!isDown) { if(state.tool==='text') return; previewShape(e); return; }
+      const pos = getPointerPos(e);
+      if(state.tool==='brush' || state.tool==='eraser') drawStroke(pos);
+      else previewShape(e, pos);
+      lastX=pos.x; lastY=pos.y;
+    });
+    stage.addEventListener('pointerup', (e)=>{
+      if(!isDown) return; isDown=false;
+      if(state.tool==='brush' || state.tool==='eraser') endStroke();
+      else commitShape(e);
+    });
+
+    function getPointerPos(e){
+      const rect = stage.getBoundingClientRect();
+      const scaleX = state.width / rect.width; const scaleY = state.height / rect.height;
+      const x = (e.clientX - rect.left) * scaleX; const y = (e.clientY - rect.top) * scaleY;
+      return {x, y};
+    }
+
+    function activeCtx(){ const layer = state.layers[state.activeIndex]; return layer?.ctx || null; }
+
+    // Brush / Eraser
+    let path;
+    function beginStroke(pos){
+      const ctx = activeCtx(); if(!ctx) return;
+      ctx.lineCap='round'; ctx.lineJoin='round';
+      ctx.lineWidth = state.stroke; ctx.strokeStyle = state.tool==='eraser' ? '#000000' : state.color;
+      ctx.globalCompositeOperation = state.tool==='eraser' ? 'destination-out' : 'source-over';
+      ctx.beginPath(); ctx.moveTo(pos.x, pos.y); path = [{x:pos.x, y:pos.y}];
+    }
+    function drawStroke(pos){
+      const ctx = activeCtx(); if(!ctx) return; path.push(pos);
+      ctx.lineTo(pos.x, pos.y); ctx.stroke();
+    }
+    function endStroke(){
+      const ctx = activeCtx(); if(!ctx) return; ctx.closePath(); ctx.globalCompositeOperation = 'source-over';
+      pushHistory();
+    }
+
+    // Shapes preview & commit
+    function previewShape(e, pos){
+      if(state.tool==='line' || state.tool==='rect' || state.tool==='ellipse'){
+        const {x:mx, y:my} = pos || getPointerPos(e);
+        redrawOverlay((o)=>{
+          o.lineWidth = state.stroke; o.strokeStyle = state.color; o.fillStyle = state.color; o.setLineDash([4,4]);
+          if(state.tool==='line'){
+            o.beginPath(); o.moveTo(startX, startY); o.lineTo(mx, my); o.stroke();
+          } else if(state.tool==='rect'){
+            const w = mx-startX, h = my-startY; state.fill ? o.fillRect(startX, startY, w, h) : o.strokeRect(startX, startY, w, h);
+          } else if(state.tool==='ellipse'){
+            o.beginPath(); o.ellipse((startX+mx)/2, (startY+my)/2, Math.abs(mx-startX)/2, Math.abs(my-startY)/2, 0, 0, Math.PI*2);
+            state.fill ? o.fill() : o.stroke();
+          }
+        });
+      } else {
+        redrawOverlay();
+      }
+    }
+    function commitShape(e){
+      if(!(state.tool==='line' || state.tool==='rect' || state.tool==='ellipse')) { redrawOverlay(); return; }
+      const ctx = activeCtx(); if(!ctx) return;
+      const {x:mx, y:my} = getPointerPos(e);
+      ctx.lineWidth = state.stroke; ctx.strokeStyle = state.color; ctx.fillStyle = state.color; ctx.setLineDash([]);
+      if(state.tool==='line'){
+        ctx.beginPath(); ctx.moveTo(startX, startY);
+        const straight = e.shiftKey; const x2 = straight ? startX : mx; const y2 = straight ? my : my;
+        ctx.lineTo(mx, my); ctx.stroke();
+      } else if(state.tool==='rect'){
+        const w = mx-startX, h = my-startY; state.fill ? ctx.fillRect(startX, startY, w, h) : ctx.strokeRect(startX, startY, w, h);
+      } else if(state.tool==='ellipse'){
+        ctx.beginPath(); ctx.ellipse((startX+mx)/2, (startY+my)/2, Math.abs(mx-startX)/2, Math.abs(my-startY)/2, 0, 0, Math.PI*2);
+        state.fill ? ctx.fill() : ctx.stroke();
+      }
+      redrawOverlay(); pushHistory();
+    }
+
+    // Text tool: floating editable div
+    let floatingText=null;
+    function startTextInput(pos){
+      removeFloatingText();
+      const div = document.createElement('div'); div.contentEditable = 'true'; div.className='floating-text';
+      div.style.left = (pos.x * stage.clientWidth / state.width) + 'px';
+      div.style.top = (pos.y * stage.clientHeight / state.height) + 'px';
+      div.style.font = '20px/1.4 sans-serif';
+      div.dataset.cx = pos.x; div.dataset.cy = pos.y;
+      stage.appendChild(div); div.focus(); floatingText = div;
+      div.onkeydown = (e)=>{
+        if(e.key==='Enter'){ e.preventDefault(); commitText(); }
+        if(e.key==='Escape'){ removeFloatingText(); }
+      };
+      div.onblur = ()=> commitText();
+    }
+    function commitText(){
+      if(!floatingText) return; const text = floatingText.innerText.trim(); if(!text){ removeFloatingText(); return; }
+      const x = +floatingText.dataset.cx; const y = +floatingText.dataset.cy; const ctx = activeCtx();
+      ctx.save(); ctx.font = '20px sans-serif'; ctx.fillStyle = state.color; ctx.textBaseline='top';
+      wrapAndFillText(ctx, text, x, y, 600, 24); ctx.restore();
+      removeFloatingText(); pushHistory();
+    }
+    function removeFloatingText(){ if(floatingText){ floatingText.remove(); floatingText=null; } }
+    function wrapAndFillText(ctx, text, x, y, maxWidth, lineHeight){
+      const words = text.split(/\s+/); let line=''; let yy=y;
+      for(let w of words){ const test = line? line + ' ' + w : w; if(ctx.measureText(test).width>maxWidth){ ctx.fillText(line, x, yy); line=w; yy+=lineHeight; } else line=test; }
+      if(line) ctx.fillText(line, x, yy);
+    }
+
+    // =================
+    // History (Undo/Redo)
+    // =================
+    const MAX_HISTORY = 30;
+    function pushHistory(){
+      const layer = state.layers[state.activeIndex]; if(!layer) return;
+      // Clamp redo
+      layer.redo.length = 0;
+      const data = layer.canvas.toDataURL();
+      layer.history.push(data); if(layer.history.length>MAX_HISTORY) layer.history.shift();
+      updateUndoRedoButtons();
+    }
+    function undo(){
+      const layer = state.layers[state.activeIndex]; if(!layer || layer.history.length===0) return;
+      const current = layer.canvas.toDataURL();
+      const prev = layer.history.pop(); if(prev){ layer.redo.push(current); drawDataUrlToCanvas(prev, layer.canvas); }
+      updateUndoRedoButtons();
+    }
+    function redo(){
+      const layer = state.layers[state.activeIndex]; if(!layer || layer.redo.length===0) return;
+      const url = layer.redo.pop(); if(url){ layer.history.push(layer.canvas.toDataURL()); drawDataUrlToCanvas(url, layer.canvas); }
+      updateUndoRedoButtons();
+    }
+    function updateUndoRedoButtons(){
+      document.getElementById('undoBtn').disabled = !state.layers[state.activeIndex]?.history?.length;
+      document.getElementById('redoBtn').disabled = !state.layers[state.activeIndex]?.redo?.length;
+    }
+    function drawDataUrlToCanvas(url, canvas){
+      const img = new Image(); img.onload = ()=>{ const ctx = canvas.getContext('2d'); ctx.clearRect(0,0,canvas.width,canvas.height); ctx.drawImage(img,0,0); };
+      img.src=url;
+    }
+
+    // =========
+    // Filters
+    // =========
+    const filterSelect = document.getElementById('filterSelect');
+    filterSelect.addEventListener('change', ()=>{
+      const v = filterSelect.value; filterSelect.selectedIndex=0; if(!v) return;
+      const layer = state.layers[state.activeIndex]; if(!layer) return;
+      applyFilter(layer, v); pushHistory();
+    });
+
+    function applyFilter(layer, type){
+      const c = layer.canvas; const ctx = layer.ctx;
+      if(type.startsWith('blur')){
+        const px = type==='blur2'?2: type==='blur4'?4: 8;
+        const temp = makeCanvas(); temp.getContext('2d').drawImage(c,0,0);
+        ctx.clearRect(0,0,c.width,c.height); ctx.filter = `blur(${px}px)`; ctx.drawImage(temp,0,0); ctx.filter='none';
+        return;
+      }
+      if(type==='clearfilters'){
+        // No-op (filters are destructive). To "revert", we simply undo.
+        alert('Use Undo to revert filters.'); return;
+      }
+      // Pixel-wise filters
+      const img = ctx.getImageData(0,0,c.width,c.height); const d = img.data;
+      for(let i=0;i<d.length;i+=4){
+        const r = d[i], g = d[i+1], b = d[i+2];
+        if(type==='grayscale'){
+          const v = (r*0.2126 + g*0.7152 + b*0.0722)|0; d[i]=d[i+1]=d[i+2]=v;
+        } else if(type==='sepia'){
+          d[i]   = Math.min(255, 0.393*r + 0.769*g + 0.189*b);
+          d[i+1] = Math.min(255, 0.349*r + 0.686*g + 0.168*b);
+          d[i+2] = Math.min(255, 0.272*r + 0.534*g + 0.131*b);
+        } else if(type==='invert'){
+          d[i]=255-r; d[i+1]=255-g; d[i+2]=255-b;
+        } else if(type==='sharpen'){
+          // Simple unsharp mask
+          // Blur copy
+          const tmp = makeCanvas(); const tctx = tmp.getContext('2d'); tctx.filter='blur(2px)'; tctx.drawImage(c,0,0); tctx.filter='none';
+          const orig = ctx.getImageData(0,0,c.width,c.height);
+          const blur = tctx.getImageData(0,0,c.width,c.height);
+          for(let j=0;j<d.length;j+=4){
+            const nr = orig.data[j] + (orig.data[j]-blur.data[j]);
+            const ng = orig.data[j+1] + (orig.data[j+1]-blur.data[j+1]);
+            const nb = orig.data[j+2] + (orig.data[j+2]-blur.data[j+2]);
+            d[j] = Math.max(0, Math.min(255, nr));
+            d[j+1] = Math.max(0, Math.min(255, ng));
+            d[j+2] = Math.max(0, Math.min(255, nb));
+          }
+          break; // we've already computed full array; break outer loop
+        }
+      }
+      ctx.putImageData(img,0,0);
+    }
+
+    // ==========
+    // Import/Export
+    // ==========
+    document.getElementById('importImg').onclick = ()=>{ hiddenFile.accept='image/*'; hiddenFile.onchange = handleImportImage; hiddenFile.click(); };
+    document.getElementById('exportPNG').onclick = exportPNG;
+    document.getElementById('saveProj').onclick = saveProject;
+    document.getElementById('loadProj').onclick = ()=>{ hiddenFile.accept='.json'; hiddenFile.onchange = handleLoadProject; hiddenFile.click(); };
+    document.getElementById('clearAll').onclick = clearAll;
+
+    function handleImportImage(e){
+      const file = e.target.files[0]; if(!file) return; const url = URL.createObjectURL(file);
+      const img = new Image(); img.onload = ()=>{
+        const ctx = activeCtx(); if(!ctx) return;
+        // Fit to canvas preserving aspect (contain)
+        const {dx,dy,dw,dh} = contain(img.width, img.height, state.width, state.height);
+        ctx.drawImage(img, dx, dy, dw, dh); URL.revokeObjectURL(url); pushHistory(); hiddenFile.value='';
+      }; img.src=url;
+    }
+
+    function contain(sw, sh, dw, dh){
+      const s = Math.min(dw/sw, dh/sh); const cw = sw*s, ch=sh*s; return {dx: (dw-cw)/2, dy:(dh-ch)/2, dw:cw, dh:ch};
+    }
+
+    function exportPNG(){
+      // Composite into a single offscreen canvas
+      const comp = makeCanvas(); const cctx = comp.getContext('2d');
+      state.layers.forEach(l=>{ if(l.visible) cctx.drawImage(l.canvas,0,0); });
+      const a = document.createElement('a'); a.download = 'canvas-studio.png'; a.href = comp.toDataURL('image/png'); a.click();
+    }
+
+    function saveProject(){
+      const proj = {
+        w: state.width, h: state.height, active: state.activeIndex, layers: state.layers.map(l=>({
+          name: l.name, visible: l.visible, data: l.canvas.toDataURL('image/png')
+        }))
+      };
+      const blob = new Blob([JSON.stringify(proj)], {type:'application/json'});
+      const url = URL.createObjectURL(blob); const a = document.createElement('a');
+      a.href=url; a.download='canvas-studio-project.json'; a.click(); URL.revokeObjectURL(url);
+    }
+
+    function handleLoadProject(e){
+      const file = e.target.files[0]; if(!file) return; const reader = new FileReader();
+      reader.onload = ()=>{ try{ const proj = JSON.parse(reader.result); loadProject(proj); } catch(err){ alert('Invalid project file.'); } finally { hiddenFile.value=''; }};
+      reader.readAsText(file);
+    }
+
+    function loadProject(proj){
+      clearAll(true);
+      state.width = proj.w; state.height = proj.h;
+      // Resize existing canvases
+      [...stage.querySelectorAll('canvas')].forEach(c=>{ c.width = state.width; c.height = state.height; });
+      proj.layers.forEach((L,i)=>{
+        const layer = addLayer(L.name || ('Layer '+(i+1)));
+        layer.visible = L.visible!==false; layer.canvas.style.display = layer.visible?'block':'none';
+        drawDataUrlToCanvas(L.data, layer.canvas);
+      });
+      selectLayer(Math.min(proj.active ?? 0, state.layers.length-1));
+      pushHistory();
+    }
+
+    function clearAll(silent){
+      // Remove all layer canvases except overlay
+      state.layers.forEach(l=> l.canvas.remove()); state.layers.length=0; state.activeIndex=-1;
+      renderLayerList();
+      if(!silent) addLayer('Background');
+      if(!silent) selectLayer(0);
+      pushHistory();
+    }
+
+    // ======================
+    // Keyboard shortcuts
+    // ======================
+    window.addEventListener('keydown', (e)=>{
+      const mod = e.metaKey || e.ctrlKey;
+      if(mod && e.key.toLowerCase()==='z'){ e.preventDefault(); undo(); }
+      if(mod && (e.key.toLowerCase()==='y' || (e.shiftKey && e.key.toLowerCase()==='z'))){ e.preventDefault(); redo(); }
+      if(!mod){
+        if(e.key.toLowerCase()==='b') setTool('brush');
+        else if(e.key.toLowerCase()==='e') setTool('eraser');
+        else if(e.key.toLowerCase()==='l') setTool('line');
+        else if(e.key.toLowerCase()==='r') setTool('rect');
+        else if(e.key.toLowerCase()==='o') setTool('ellipse');
+        else if(e.key.toLowerCase()==='t') setTool('text');
+      }
+    });
+
+    // Layer buttons
+    document.getElementById('addLayer').onclick = ()=> addLayer();
+    document.getElementById('dupLayer').onclick = duplicateLayer;
+    document.getElementById('delLayer').onclick = deleteLayer;
+    document.getElementById('layerUp').onclick = ()=> moveLayer(+1);
+    document.getElementById('layerDown').onclick = ()=> moveLayer(-1);
+    document.getElementById('undoBtn').onclick = undo;
+    document.getElementById('redoBtn').onclick = redo;
+
+    // Boot
+    initStage();
+  </script>
+</body>
+</html>
